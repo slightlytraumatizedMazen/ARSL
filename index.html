@@ -1,135 +1,166 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>YOLOv11 Arabic Hand Sign Demo</title>
-  <style>
-    body {
-      margin: 0;
-      background: black;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      color: white;
-      font-family: Arial, sans-serif;
-    }
-    canvas {
-      border: 2px solid #00ff00;
-    }
-    #autocomplete {
-      margin-top: 10px;
-      font-size: 24px;
-      color: #5f9ea0;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YOLOv11 Arabic Hand Sign Demo</title>
+<style>
+  body {
+    margin: 0;
+    background: black;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    color: white;
+    font-family: Arial, sans-serif;
+  }
+  canvas {
+    border: 2px solid #00ff00;
+  }
+  #autocomplete {
+    margin-top: 10px;
+    font-size: 24px;
+    color: #5f9ea0;
+  }
+</style>
 </head>
 <body>
-  <video id="webcam" autoplay playsinline width="640" height="480" style="display:none;"></video>
-  <canvas id="canvas" width="640" height="480"></canvas>
-  <div id="autocomplete"></div>
+<video id="webcam" autoplay playsinline width="640" height="480" style="display:none;"></video>
+<canvas id="canvas" width="640" height="480"></canvas>
+<div id="autocomplete"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0/dist/tf.min.js"></script>
-  <script>
-    const video = document.getElementById('webcam');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const autocompleteDiv = document.getElementById('autocomplete');
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0/dist/tf.min.js"></script>
+<script>
+const video = document.getElementById('webcam');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const autocompleteDiv = document.getElementById('autocomplete');
 
-    // Example Arabic words for autocomplete
-    const autocomplete_words = ["محمد", "محمود", "أحمد", "نور", "هشام", "وليد", "علي", "عمر"];
+// Replace with your real Arabic words for autocomplete
+const autocomplete_words = ["محمد", "محمود", "أحمد", "نور", "هشام", "وليد", "علي", "عمر"];
 
-    // Map detected labels to Arabic characters
-    const arabic_map = {
-      "aleff": "ا", "bb": "ب", "taa": "ت", "thaa": "ث", "jeem": "ج",
-      "haa": "ح", "khaa": "خ", "dal": "د", "thal": "ذ", "ra": "ر",
-      "zay": "ز", "seen": "س", "sheen": "ش", "saad": "ص", "dhad": "ض",
-      "ta": "ط", "dha": "ظ", "ain": "ع", "ghain": "غ", "fa": "ف",
-      "gaaf": "ق", "kaaf": "ك", "laam": "ل", "meem": "م", "nun": "ن",
-      "ha": "ه", "toot": "ة", "waw": "و", "ya": "ئ", "al": "ال",
-      "la": "لا", "yaa": "ي", "space": " "
-    };
+// Map labels to Arabic letters
+const arabic_map = {
+  "aleff":"ا","bb":"ب","taa":"ت","thaa":"ث","jeem":"ج",
+  "haa":"ح","khaa":"خ","dal":"د","thal":"ذ","ra":"ر",
+  "zay":"ز","seen":"س","sheen":"ش","saad":"ص","dhad":"ض",
+  "ta":"ط","dha":"ظ","ain":"ع","ghain":"غ","fa":"ف",
+  "gaaf":"ق","kaaf":"ك","laam":"ل","meem":"م","nun":"ن",
+  "ha":"ه","toot":"ة","waw":"و","ya":"ئ","al":"ال",
+  "la":"لا","yaa":"ي","space":" "
+};
 
-    let sentence_labels = [];
-    let current_label = "";
+let sentence_labels = [];
+let current_label = "";
+let modelTF = null;
+let frameCounter = 0;
 
-    function suggest_autocomplete(sentence) {
-      for (const w of autocomplete_words) {
-        if (w.startsWith(sentence) && sentence !== w) return w;
-      }
-      return "";
-    }
+// Suggest autocomplete
+function suggest_autocomplete(sentence){
+  for(const w of autocomplete_words){
+    if(w.startsWith(sentence) && sentence!==w) return w;
+  }
+  return "";
+}
 
-    async function setupCamera() {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
-      return new Promise(resolve => {
-        video.onloadedmetadata = () => { resolve(video); };
-      });
-    }
+// Setup webcam
+async function setupCamera(){
+  const stream = await navigator.mediaDevices.getUserMedia({video:true});
+  video.srcObject = stream;
+  return new Promise(resolve=>{
+    video.onloadedmetadata = ()=>resolve(video);
+  });
+}
 
-    async function loadModel() {
-      // Load your YOLOv11 TFJS model from 'model/model.json'
-      return await tf.loadGraphModel('model/model.json');
-    }
+// Load YOLOv11 TFJS model
+async function loadModel(){
+  modelTF = await tf.loadGraphModel('model/model.json'); // adjust path
+}
 
-    function preprocessFrame(video) {
-      return tf.tidy(() => {
-        let tensor = tf.browser.fromPixels(video);
-        tensor = tf.image.resizeBilinear(tensor, [224, 224]); // match model input size
-        tensor = tensor.expandDims(0);
-        tensor = tensor.div(255.0); // normalize
-        return tensor;
-      });
-    }
+// Preprocess frame for YOLO
+function preprocessFrame(video){
+  return tf.tidy(()=>{
+    let tensor = tf.browser.fromPixels(video)
+      .resizeNearestNeighbor([224,224])
+      .toFloat()
+      .div(255.0)
+      .expandDims(0);
+    return tensor;
+  });
+}
 
-    async function main() {
-      await setupCamera();
-      video.play();
+// Run detection (mock label if TFJS not ready)
+async function detectFrame(){
+  frameCounter++;
+  if(!modelTF || frameCounter % 2 !== 0) return; // skip frames to reduce lag
 
-      const model = await loadModel();
+  const input = preprocessFrame(video);
+  const preds = await modelTF.executeAsync(input);
+  // TODO: parse preds to get top label
+  // For now, mock detection:
+  current_label = "aleff"; 
+  input.dispose();
+}
 
-      async function renderFrame() {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+function drawFrame(){
+  ctx.drawImage(video,0,0,canvas.width,canvas.height);
 
-        // Run YOLOv11 inference
-        const input = preprocessFrame(video);
-        const output = await model.executeAsync(input); // adjust if your model has custom output
-        const probs = output.arraySync()[0]; // assuming 1D array of probabilities
+  // Draw green bounding box
+  const boxSize = 200;
+  const x1 = canvas.width/2 - boxSize/2;
+  const y1 = canvas.height/2 - boxSize/2;
+  const x2 = canvas.width/2 + boxSize/2;
+  const y2 = canvas.height/2 + boxSize/2;
+  ctx.strokeStyle = 'lime';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x1,y1,x2-x1,y2-y1);
 
-        // Get top prediction
-        const topIndex = probs.indexOf(Math.max(...probs));
-        const classNames = Object.keys(arabic_map); // 32 labels in order
-        current_label = classNames[topIndex];
+  // Draw current letter
+  if(current_label){
+    const char = arabic_map[current_label] || "";
+    ctx.font = "48px Arial";
+    ctx.fillStyle = "green";
+    ctx.fillText(char, canvas.width/2-24, canvas.height-40);
+  }
 
-        input.dispose();
-        output.dispose();
+  // Build Arabic sentence
+  const arabic_sentence = sentence_labels.map(l=>arabic_map[l]||"").join("");
+  const suggestion = suggest_autocomplete(arabic_sentence);
 
-        if (current_label) sentence_labels.push(current_label);
+  ctx.font = "32px Arial";
+  ctx.fillStyle = "white";
+  ctx.fillText(arabic_sentence,10,40);
 
-        const arabic_sentence = sentence_labels.map(l => arabic_map[l] || "").join("");
-        const suggestion = suggest_autocomplete(arabic_sentence);
+  if(suggestion){
+    ctx.fillStyle = "#5f9ea0";
+    ctx.fillText(suggestion,10,80);
+  }
+}
 
-        // Draw Arabic sentence
-        ctx.font = "32px Arial";
-        ctx.fillStyle = "white";
-        ctx.fillText(arabic_sentence, 10, 40);
+function handleKey(e){
+  if(e.key==="Enter" && current_label) sentence_labels.push(current_label);
+  else if(e.key===" ") sentence_labels.push("space");
+  else if(e.key==="Backspace") sentence_labels.pop();
+  else if(e.key==="r") sentence_labels=[];
+}
 
-        // Draw autocomplete suggestion
-        if (suggestion) {
-          ctx.fillStyle = "#5f9ea0";
-          ctx.fillText(suggestion, 10, 80);
-        }
+async function main(){
+  await setupCamera();
+  await loadModel();
+  video.play();
+  window.addEventListener('keydown', handleKey);
 
-        requestAnimationFrame(renderFrame);
-      }
+  async function renderLoop(){
+    await detectFrame();
+    drawFrame();
+    requestAnimationFrame(renderLoop);
+  }
+  renderLoop();
+}
 
-      renderFrame();
-    }
-
-    main();
-  </script>
+main();
+</script>
 </body>
 </html>
