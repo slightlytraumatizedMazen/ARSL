@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>YOLOv11 Webcam TFJS</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+</head>
+<body>
+  <h2>YOLOv11 Webcam Demo (TFJS)</h2>
+  
+  <video id="video" autoplay playsinline muted style="display:none;"></video>
+  <canvas id="canvas"></canvas>
+
+  <script type="module">
+    import * as tf from "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest";
+
+    let model;
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    // Load model
+    async function loadModel() {
+      model = await tf.loadGraphModel("./model/model.json"); // your exported YOLO model folder
+      console.log("✅ Model loaded");
+      startWebcam();
+    }
+
+    // Start webcam
+    async function startWebcam() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+
+      video.onloadedmetadata = () => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        detectFrame();
+      };
+    }
+
+    // Run detection
+    async function detectFrame() {
+      tf.engine().startScope();
+
+      const tensor = tf.browser.fromPixels(video)
+        .resizeBilinear([224, 224])   // resize to YOLO input
+        .expandDims(0)
+        .toFloat()
+        .div(255.0);
+
+      const preds = await model.executeAsync(tensor);
+      const [boxes, scores, classes] = preds; // typical YOLO export format
+
+      const boxesData = await boxes.array();
+      const scoresData = await scores.array();
+      const classesData = await classes.array();
+
+      // Draw video frame
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Draw detections
+      for (let i = 0; i < scoresData[0].length; i++) {
+        if (scoresData[0][i] > 0.5) {  // confidence threshold
+          const [ymin, xmin, ymax, xmax] = boxesData[0][i];
+          const x = xmin * canvas.width;
+          const y = ymin * canvas.height;
+          const w = (xmax - xmin) * canvas.width;
+          const h = (ymax - ymin) * canvas.height;
+
+          ctx.strokeStyle = "lime";
+          ctx.lineWidth = 3;
+          ctx.strokeRect(x, y, w, h);
+
+          ctx.fillStyle = "red";
+          ctx.font = "18px Arial";
+          ctx.fillText(classesData[0][i], x, y > 20 ? y - 5 : y + 20);
+        }
+      }
+
+      tf.engine().endScope();
+      requestAnimationFrame(detectFrame);
+    }
+
+    loadModel();
+  </script>
+</body>
+</html>
