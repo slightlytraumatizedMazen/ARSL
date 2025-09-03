@@ -1,141 +1,116 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>YOLOv11 Arabic Sign Language</title>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0/dist/tf.min.js"></script>
-<style>
-  html, body { margin:0; padding:0; overflow:hidden; background:#000; color:white; font-family:sans-serif;}
-  canvas { display:block; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YOLOv11 Arabic Hand Sign Demo</title>
+  <style>
+    body {
+      margin: 0;
+      background: black;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      border: 2px solid #00ff00;
+    }
+    #autocomplete {
+      margin-top: 10px;
+      font-size: 24px;
+      color: #5f9ea0;
+    }
+  </style>
 </head>
 <body>
+  <video id="webcam" autoplay playsinline width="640" height="480" style="display:none;"></video>
+  <canvas id="canvas" width="640" height="480"></canvas>
+  <div id="autocomplete"></div>
 
-<video id="webcam" autoplay playsinline style="display:none;"></video>
-<canvas id="canvas"></canvas>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script> <!-- placeholder for YOLOv11 TFJS -->
+  <script>
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const autocompleteDiv = document.getElementById('autocomplete');
 
-<script>
-const video = document.getElementById('webcam');
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+    // Example Arabic words for autocomplete
+    const autocomplete_words = ["محمد", "محمود", "أحمد", "نور", "هشام", "وليد", "علي", "عمر"];
 
-const arabicMap = {
-"aleff":"ا","bb":"ب","taa":"ت","thaa":"ث","jeem":"ج",
-"haa":"ح","khaa":"خ","dal":"د","thal":"ذ","ra":"ر",
-"zay":"ز","seen":"س","sheen":"ش","saad":"ص","dhad":"ض",
-"ta":"ط","dha":"ظ","ain":"ع","ghain":"غ","fa":"ف",
-"gaaf":"ق","kaaf":"ك","laam":"ل","meem":"م","nun":"ن",
-"ha":"ه","toot":"ة","waw":"و","ya":"ئ","al":"ال",
-"la":"لا","yaa":"ي","space":" "
-};
+    // Map detected labels to Arabic characters
+    const arabic_map = {
+      "aleff": "ا", "bb": "ب", "taa": "ت", "thaa": "ث", "jeem": "ج",
+      "haa": "ح", "khaa": "خ", "dal": "د", "thal": "ذ", "ra": "ر",
+      "zay": "ز", "seen": "س", "sheen": "ش", "saad": "ص", "dhad": "ض",
+      "ta": "ط", "dha": "ظ", "ain": "ع", "ghain": "غ", "fa": "ف",
+      "gaaf": "ق", "kaaf": "ك", "laam": "ل", "meem": "م", "nun": "ن",
+      "ha": "ه", "toot": "ة", "waw": "و", "ya": "ئ", "al": "ال",
+      "la": "لا", "yaa": "ي", "space": " "
+    };
 
-// Full autocomplete list from your Python code
-const autocompleteWords = [
-"محمد","محمود","أحمد","نور","هشام","وليد","علي","عمر","يوسف","سعيد",
-"خالد","إبراهيم","إسماعيل","آدم","أيمن","حسن","حسين","مصطفى","شريف","طارق",
-// ... add all names from your Python list
-];
+    let sentence_labels = [];
+    let current_label = "";
 
-let sentenceLabels = [];
-let currentLabel = "";
+    function suggest_autocomplete(sentence) {
+      for (const w of autocomplete_words) {
+        if (w.startsWith(sentence) && sentence !== w) return w;
+      }
+      return "";
+    }
 
-// Suggest autocomplete
-function suggestAutocomplete(sentence, words){
-  for(const w of words){
-    if(w.startsWith(sentence) && sentence!==w) return w;
-  }
-  return null;
-}
-
-// Setup webcam
-async function setupWebcam(){
-  const stream = await navigator.mediaDevices.getUserMedia({video:true});
-  video.srcObject = stream;
-  await new Promise(resolve => video.onloadedmetadata = resolve);
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-}
-
-// Load TFJS YOLOv11 model
-let model;
-async function loadModel(){
-  model = await tf.loadGraphModel('model/model.json'); // your exported TFJS model
-}
-
-// Run detection
-async function detectFrame(){
-  const input = tf.browser.fromPixels(video).expandDims(0).div(255.0);
-  const predictions = await model.executeAsync(input);
-  
-  // TODO: Replace with actual parsing from your TFJS YOLO model
-  const labels = Object.keys(arabicMap);
-  currentLabel = labels[Math.floor(Math.random()*labels.length)]; // demo placeholder
-  
-  const arabicSentence = sentenceLabels.map(l=>arabicMap[l]||"").join("");
-  const suggestion = suggestAutocomplete(arabicSentence, autocompleteWords);
-
-  // Draw video
-  ctx.drawImage(video,0,0,canvas.width,canvas.height);
-
-  // Draw center box
-  const boxSize = 350;
-  const x1 = canvas.width/2 - boxSize/2;
-  const y1 = canvas.height/2 - boxSize/2;
-  ctx.strokeStyle = "lime";
-  ctx.lineWidth = 3;
-  ctx.strokeRect(x1,y1,boxSize,boxSize);
-
-  // Draw sentence
-  ctx.font = "50px Arial";
-  ctx.fillStyle = "white";
-  ctx.fillText(arabicSentence,50,60);
-
-  // Draw suggestion
-  if(suggestion){
-    ctx.fillStyle="cyan";
-    ctx.fillText(suggestion,50,120);
-  }
-
-  // Draw current label
-  if(currentLabel){
-    ctx.fillStyle="lime";
-    ctx.fillText(arabicMap[currentLabel]||"",canvas.width/2,canvas.height-50);
-  }
-
-  tf.dispose(input);
-  requestAnimationFrame(detectFrame);
-}
-
-// Keyboard controls
-document.addEventListener('keydown', e=>{
-  if(e.key==="Enter" && currentLabel) sentenceLabels.push(currentLabel);
-  else if(e.key===" ") sentenceLabels.push("space");
-  else if(e.key==="Backspace") sentenceLabels.pop();
-  else if(e.key==="Tab"){
-    e.preventDefault();
-    const arabicSentence = sentenceLabels.map(l=>arabicMap[l]||"").join("");
-    const suggestion = suggestAutocomplete(arabicSentence, autocompleteWords);
-    if(suggestion){
-      sentenceLabels = [];
-      for(const ch of suggestion){
-        for(const k in arabicMap){
-          if(arabicMap[k]===ch) sentenceLabels.push(k);
-        }
+    async function setupCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        return new Promise(resolve => {
+          video.onloadedmetadata = () => { resolve(video); };
+        });
+      } catch (err) {
+        alert("Could not access webcam: " + err);
       }
     }
-  }
-  else if(e.key==="r") sentenceLabels=[];
-});
 
-// Start everything
-async function main(){
-  await setupWebcam();
-  await loadModel();
-  detectFrame();
-}
+    async function main() {
+      await setupCamera();
+      video.play();
 
-main();
-</script>
+      function renderFrame() {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+        // **PLACEHOLDER:** Replace this with your YOLOv11 TFJS detection code
+        // Example: simulate a detected label every frame
+        // You need to load your YOLOv11 TFJS model here
+        current_label = "aleff"; 
+
+        if (current_label) sentence_labels.push(current_label);
+
+        // Build Arabic sentence
+        const arabic_sentence = sentence_labels.map(l => arabic_map[l] || "").join("");
+        const suggestion = suggest_autocomplete(arabic_sentence);
+
+        // Draw sentence
+        ctx.font = "32px Arial";
+        ctx.fillStyle = "white";
+        ctx.fillText(arabic_sentence, 10, 40);
+
+        // Draw autocomplete
+        if (suggestion) {
+          ctx.fillStyle = "#5f9ea0";
+          ctx.fillText(suggestion, 10, 80);
+        }
+
+        requestAnimationFrame(renderFrame);
+      }
+
+      renderFrame();
+    }
+
+    main();
+  </script>
 </body>
 </html>
