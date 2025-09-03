@@ -32,7 +32,6 @@
   <div id="autocomplete"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script> <!-- placeholder for YOLOv11 TFJS -->
   <script>
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('canvas');
@@ -64,41 +63,61 @@
     }
 
     async function setupCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
-        return new Promise(resolve => {
-          video.onloadedmetadata = () => { resolve(video); };
-        });
-      } catch (err) {
-        alert("Could not access webcam: " + err);
-      }
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      return new Promise(resolve => {
+        video.onloadedmetadata = () => { resolve(video); };
+      });
+    }
+
+    async function loadModel() {
+      // Load your YOLOv11 TFJS model from 'model/model.json'
+      return await tf.loadGraphModel('model/model.json');
+    }
+
+    function preprocessFrame(video) {
+      return tf.tidy(() => {
+        let tensor = tf.browser.fromPixels(video);
+        tensor = tf.image.resizeBilinear(tensor, [224, 224]); // match model input size
+        tensor = tensor.expandDims(0);
+        tensor = tensor.div(255.0); // normalize
+        return tensor;
+      });
     }
 
     async function main() {
       await setupCamera();
       video.play();
 
-      function renderFrame() {
+      const model = await loadModel();
+
+      async function renderFrame() {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // **PLACEHOLDER:** Replace this with your YOLOv11 TFJS detection code
-        // Example: simulate a detected label every frame
-        // You need to load your YOLOv11 TFJS model here
-        current_label = "aleff"; 
+        // Run YOLOv11 inference
+        const input = preprocessFrame(video);
+        const output = await model.executeAsync(input); // adjust if your model has custom output
+        const probs = output.arraySync()[0]; // assuming 1D array of probabilities
+
+        // Get top prediction
+        const topIndex = probs.indexOf(Math.max(...probs));
+        const classNames = Object.keys(arabic_map); // 32 labels in order
+        current_label = classNames[topIndex];
+
+        input.dispose();
+        output.dispose();
 
         if (current_label) sentence_labels.push(current_label);
 
-        // Build Arabic sentence
         const arabic_sentence = sentence_labels.map(l => arabic_map[l] || "").join("");
         const suggestion = suggest_autocomplete(arabic_sentence);
 
-        // Draw sentence
+        // Draw Arabic sentence
         ctx.font = "32px Arial";
         ctx.fillStyle = "white";
         ctx.fillText(arabic_sentence, 10, 40);
 
-        // Draw autocomplete
+        // Draw autocomplete suggestion
         if (suggestion) {
           ctx.fillStyle = "#5f9ea0";
           ctx.fillText(suggestion, 10, 80);
